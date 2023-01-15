@@ -1,0 +1,154 @@
+version: '3.8'
+services:
+    keyrock:
+        image: fiware/idm:7.6.0
+        container_name: fiware-keyrock
+        hostname: keyrock
+        networks:
+            default-i:
+                ipv4_address: 172.18.1.5        
+        depends_on:
+            - mysql-db
+        ports:
+            - '3001:3001'
+            - '443:443'
+        environment:
+            - DEBUG=idm:*
+            - IDM_DB_HOST=mysql-db
+            - IDM_HOST=http://localhost:3001
+            - IDM_PORT=3001
+            # Development use only
+            # Use Docker Secrets for Sensitive Data
+            - IDM_DB_PASS=secret
+            - IDM_DB_USER=root
+            - IDM_ADMIN_USER=admin
+            - IDM_ADMIN_EMAIL=admin@test.com
+            - IDM_ADMIN_PASS=1234
+    
+    mysql-db:
+        restart: always
+        image: mysql:5.7
+        hostname: mysql-db
+        container_name: db-mysql
+        expose:
+            - '3306'
+        ports:
+            - '3306:3306'
+        networks:
+            default-i:
+                ipv4_address: 172.18.1.6
+        environment:
+            # Development use only
+            # Use Docker Secrets for Sensitive Data
+            - 'MYSQL_ROOT_PASSWORD=secret'
+            - 'MYSQL_ROOT_HOST=172.18.1.5'
+        volumes:
+            - mysql-db:/var/lib/mysql  
+    
+    app:
+        container_name: docker-mongo-demo1
+        restart: always
+        build: ./backend
+        ports:
+          - '5001:5001'
+        networks:
+            - default-i          
+        depends_on:
+          - mongo
+
+    mongo:
+        container_name: mongo
+        image: mongo
+        networks:
+            - default-i        
+        volumes:
+          - ./data:/data/db
+
+    frontend:
+        container_name: frontend-app
+        restart: always
+        build: ./frontend
+        environment:
+            - CHOKIDAR_USEPOLLING=true
+            #- NODE_ENV=development
+            #- REACT_APP_SERVICE_URL=http://34.107.115.79:80
+            #- REACT_APP_BASE64_AUTH=NTM4OTE4YjgtYjYyMS00YTc5LWI4YTctZTU5YWYxYjdlZWY1OmU5NzBmYjY3LWI1OWEtNDAwNS04NGQ3LTRlYmFjZWRhNjYxMg==
+        ports:
+            - '3000:3000'
+        networks:
+            - default-i     
+        depends_on:
+            - keyrock
+
+    orion:
+        image: fiware/orion
+        container_name: fiware-orion
+        hostname: orion
+        depends_on:
+            - mongo-orion
+        networks:
+            - default-i
+        ports:
+            - "1026:1026" # localhost:1026
+        expose: 
+            - '1026'
+        command: -dbhost mongo-orion -logLevel DEBUG
+
+
+    mongo-orion:
+        image: mongo:3.4
+        container_name: db-orion
+        networks:
+            - default-i
+        volumes:
+        - mongo-orion:/data
+        healthcheck:
+                interval: 5s
+
+
+    pep-proxy-orion:
+        image: fiware/pep-proxy
+        container_name: pep-proxy-orion
+        depends_on:
+            keyrock:
+                condition: service_started
+        deploy:
+            restart_policy:
+                condition: on-failure           
+        ports:
+            - "1027:1027"
+        expose:
+            - "1027"
+        environment:
+            - DEBUG=pep-proxy:*
+            - PEP_PROXY_DEBUG=true
+            - PEP_PROXY_APP_HOST=orion
+            - PEP_PROXY_APP_PORT=1026
+            - PEP_PROXY_PORT=1027
+            - PEP_PROXY_IDM_HOST=keyrock
+            - PEP_PROXY_HTTPS_ENABLED=false
+            - PEP_PROXY_AUTH_ENABLED=false
+            - PEP_PROXY_IDM_SSL_ENABLED=false
+            - PEP_PROXY_IDM_PORT=3001
+            - PEP_PROXY_APP_ID=c1efe6fa-5ec8-472a-9917-b927130dc21d
+            - PEP_PROXY_USERNAME=pep_proxy_14b078f4-40bf-4b95-b2fd-df3639192120
+            - PEP_PASSWORD=pep_proxy_0ac9007b-3e17-4784-964b-254ff8144de3
+            - PEP_PROXY_PDP=idm
+            - PEP_PROXY_MAGIC_KEY=1234
+        networks:
+            default-i:
+                ipv4_address: 172.18.1.12
+        healthcheck:
+            interval: 50s
+
+
+networks:
+    default-i:
+        ipam:
+            config:
+                - subnet: 172.18.1.0/24          
+
+volumes:
+    mysql-db:
+    mongo:
+    mongo-orion:
