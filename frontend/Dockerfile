@@ -8,6 +8,6 @@ RUN npm install
 RUN ls /app
 RUN ls /app/public
 
-EXPOSE 3000
+EXPOSE 80
 
 CMD npm start
